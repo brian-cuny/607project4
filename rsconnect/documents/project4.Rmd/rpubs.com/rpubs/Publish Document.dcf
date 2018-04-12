@@ -1,0 +1,10 @@
+name: Publish Document
+title:
+username:
+account: rpubs
+server: rpubs.com
+hostUrl: rpubs.com
+appId: https://api.rpubs.com/api/v1/document/379054/cbce93605399424585b2de1747c9595b
+bundleId: https://api.rpubs.com/api/v1/document/379054/cbce93605399424585b2de1747c9595b
+url: http://rpubs.com/brian-cuny/379054
+when: 1523544099.43227

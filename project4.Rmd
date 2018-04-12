@@ -28,11 +28,11 @@ set.seed(1234)
   <h2 class='display-3 text-uppercase'>Project 4</h2>
   <h4 class='right text-uppercase'>By Brian Weinfeld</h4>
   <div class='clearfix'></div>
-  <h5 class='right text-uppercase'>April 11h, 2018</h5>
+  <h5 class='right text-uppercase'>April 12th, 2018</h5>
 </div>
 
 <div id='electricity' class='page-header text-uppercase'>
-  <h3>Document Classification</h3>
+  <h3>Frequency Analysis</h3>
 </div>
 
 <div class='well'>
@@ -62,11 +62,11 @@ Website.Parse <- function(folder, type){
 ```
 
 <div class='well'>
-I read in the all the websites and then cleaned up the data using tidytext. In addition I removed all numbers, non-ascii symbols, and numbers. Finally, I removed all stop words and a number of other reoccuring terms that I did not want in the final analysis. My guess is that a few of the websites had malformed tags as all my custom stop words are html tags.
+I read in the all the websites and then cleaned up the data using tidytext. In addition, I removed all numbers and non-ascii symbols. Finally, I removed all stop words and a number of other reoccuring terms that I did not want in the final analysis. My guess is that a few of the websites had malformed tags as all my custom stop words are html tags.
 </div>
 
 ```{r, warning=FALSE, message=FALSE}
-custom.stopwords <- data_frame(word=c('div', 'p', 'h', 'img', 'function'))
+custom.stopwords <- data_frame(word=c('div', 'p', 'h', 'img'))
 
 data <- c('Bands', 'BioMedical', 'Goats', 'Sheep') %>%
   map_df(~Website.Parse('Train', .)) %>%
@@ -80,7 +80,7 @@ kable(data[1:10, ])
 ```
 
 <div class='well'>
-A quick examination finds 61 Band websites, 136 BioMedical websites, 70 Goats websites, and 65 Sheep websites.
+A quick examination finds 61 'Band' websites, 136 'BioMedical' websites, 70 'Goats' websites, and 65 'Sheep' websites.
 </div>
 
 ```{r}
@@ -106,7 +106,7 @@ kable(data.tfidf[1:10, ])
 ```
 
 <div class='well'>
-The below graph shows the plotted data. The words associated with each category all seem reasonable and mostly distinct. This should aid in the identification of websites. The two most similar are both intuitively and statistically Goats and Sheep. In fact, Sheep is one of the top identifiying words in the Goats category. It seems most probably that misclassification would occurr between these two sets.
+The below graph shows the plotted data. The words associated with each category all seem reasonable and mostly distinct. This should aid in the identification of websites. The two most similar (both intuitively and statistically) are 'Goats' and 'Sheep'. In fact, Sheep is one of the top identifiying words in the 'Goats' category. It seems most probably that misclassification could occurr between these two sets.
 </div>
 
 ```{r}
@@ -125,11 +125,112 @@ ggplot(data.tfidf, aes(order, tf_idf, fill=type)) +
 ```
 
 <div id='electricity' class='page-header text-uppercase'>
-  <h3>Analysis</h3>
+  <h3>Sentiment Analysis</h3>
 </div>
 
 <div class='well'>
-I prepared the data for training and testing by removing the sparse terms and adding an identifying column named type. I randomly selected 10% of the websites in the data and set them aside. The remaining 90% became the training data.
+Next, I wanted to perform a sentiment analysis on each of the four types of websites. I joined the data with the 'afinn' sentiment dataframe. This dataframe contains a list of words with an associated score from -5 to 5 based on how negative or positive the word is. I then plotted the data along with each group's average.
+
+It appears that 'Bands' websites are most likely to use positive language while 'Sheep' websites are more prone to using neutral language.
+</div>
+
+```{r, message=FALSE}
+afinn.data <- data %>%
+  inner_join(get_sentiments('afinn')) %>%
+  count(type, word, score) %>%
+  mutate(total = n/sum(n))
+
+afinn.vline.data <- afinn.data %>%
+  group_by(type) %>%
+  summarise(avg = mean(n*score))
+
+ggplot(afinn.data, aes(score, total, fill=factor(score))) +
+  geom_bar(stat='identity') +
+  geom_vline(data=afinn.vline.data, aes(xintercept=avg)) +
+  facet_wrap(~type, ncol=1) +
+  scale_x_continuous(limits=c(-5,5), breaks=seq(-5,5,1)) +
+  scale_y_continuous(limits=c(0,.15), breaks=seq(0,.15,.05), expand=c(0,0), labels=percent) +
+  scale_fill_brewer(palette='RdYlGn') + 
+  labs(x='Sentiment Score',
+       y='Frequency',
+       title='Use of Strong Words by Topic') +
+  theme_bw() + 
+  theme(legend.position='none',
+        panel.grid.minor=element_blank(),
+        panel.grid.major.x=element_blank(),
+        strip.background=element_rect(fill='grey70'))
+```
+
+<div class='well'>
+Sentiment analysis is prone to misrepresenting the positivity or negativity of words. Since words are only examined one at a time the possibility exists that words are preceeded by a negation that changes their meaning (ie: not bad). While these instances are assumed to be a small overall percent of the uses of a word, the greater risk is that a particular domain may have certain words that are viewed as positive or negative only in their specific context. For example, a nature website by use 'bear' neutrally while financial documents may be talking about a bear market. 
+
+I plotted the top 5 most frequently used sentimental words for each group.
+</div>
+
+
+```{r}
+afinn.frequent.data <- afinn.data %>%
+  group_by(type) %>%
+  top_n(5, n) %>%
+  arrange(type, desc(n))
+kable(afinn.frequent.data)
+```
+
+<div class='well'>
+BioMedical stands out as having the highest potential for misrepresentation. In this context cancer may be a neutral term and injury could possibly be used often as a positive term. For example in "prevent injury". I decided to further examine the BioMedical data by forming bigrams.
+</div>
+
+```{r, warning=FALSE}
+bigram.data <- c('BioMedical') %>%
+  map_df(~Website.Parse('Train', .)) %>%
+  unnest_tokens(word, value, token='ngrams', n=2) %>%
+  separate(word, c('word1', 'word2'), sep=' ') %>%
+  anti_join(stop_words, by=c('word1'='word')) %>%
+  anti_join(stop_words, by=c('word2'='word')) %>%
+  anti_join(custom.stopwords, by=c('word1'='word')) %>%
+  anti_join(custom.stopwords, by=c('word2'='word')) %>%
+  filter(!str_detect(word1, '(\\d|\\.|[^A-Za-z])+')) %>%
+  filter(!str_detect(word2, '(\\d|\\.|[^A-Za-z])+')) %>%
+  filter(stringi::stri_enc_mark(word1) == 'ASCII') %>%
+  filter(stringi::stri_enc_mark(word2) == 'ASCII')
+kable(bigram.data[1:10, ])
+```
+
+<div class='well'>
+I filtered the bigrams to display only those that feature one of the most frequent BioMedical terms and then displayed the graph of frequent word pairings.
+</div>
+
+```{r}
+afinn.biomedical.frequent.data <- afinn.frequent.data %>%
+  filter(type == 'BioMedical')
+
+bigram.data %>% 
+  count(word1, word2, sort=TRUE) %>%
+  filter(word1 %in% afinn.biomedical.frequent.data$word | word2 %in% afinn.biomedical.frequent.data$word,
+         n >= 2) %>%
+  mutate(word1 = wordStem(word1)) %>%
+  mutate(word2 = wordStem(word2)) %>%
+  graph_from_data_frame() %>%
+  ggraph(layout='fr') +
+  geom_edge_link(aes(edge_alpha=n), show.legend=FALSE, arrow=arrow(type='closed', length=unit(.15, 'inches'))) + 
+  geom_node_point(color='lightblue', size=5) +
+  geom_node_text(aes(label=name), vjust=1, hjust=1) +
+  theme_void() +
+  labs(title='Frequently Used BioMedical Word Pairings')
+```
+
+<div class='well'>
+As anticipated, 'cancer' has several contexts where it appears to be a neutral term, like 'cancer center' for example. 'Injury' likewise has 'injury support'. 'Grant' appears to be discussing a medical grant as opposed to granting someone a something.
+
+If I were performing a deeper analysis of BioMedical websites it seems prudent to create my own stop words dictionary to look for commonly used key words.
+</div>
+
+<div id='electricity' class='page-header text-uppercase'>
+  <h3>Document Classification</h3>
+</div>
+
+<div class='well'>
+Finally, I wanted to see if the websites were unique enough to perform a model classificaiton on them. I prepared the data for training and testing by removing the sparse terms and adding an identifying column named type. I randomly selected 10% of the websites in the data and set them aside. The remaining 90% became the training data.
 </div>
 
 ```{r}
@@ -178,5 +279,5 @@ table(present.results$original, present.results$prediction)
 ```
 
 <div class='alert alert-success'>
-The analysis has been highly successful. The random forest model was $\frac{30}{32}=0.9375$ about 94% successful in identifying websites.
+The analysis has been highly successful. The random forest model was $\frac{30}{32}\approx94\%$ successful in identifying websites.
 </div>

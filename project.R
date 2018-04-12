@@ -61,6 +61,82 @@ ggplot(data.tfidf, aes(order, tf_idf, fill=type)) +
   )
 # td_idf by topic ---------------------------------------------------------
 
+# sentiment analysis ------------------------------------------------------
+
+afinn.data <- data %>%
+  inner_join(get_sentiments('afinn')) %>%
+  count(type, word, score) %>%
+  mutate(total = n/sum(n))
+
+afinn.frequent.data <- afinn.data %>%
+  group_by(type) %>%
+  top_n(5, n) %>%
+  arrange(type, desc(n))
+
+afinn.vline.data <- afinn.data %>%
+  group_by(type) %>%
+  summarise(avg = mean(n*score))
+
+ggplot(afinn.data, aes(score, total, fill=factor(score))) +
+  geom_bar(stat='identity') +
+  geom_vline(data=afinn.vline.data, aes(xintercept=avg)) +
+  facet_wrap(~type, ncol=1) +
+  scale_x_continuous(limits=c(-5,5), breaks=seq(-5,5,1)) +
+  scale_y_continuous(limits=c(0,.15), breaks=seq(0,.15,.05), expand=c(0,0), labels=percent) +
+  scale_fill_brewer(palette='RdYlGn') + 
+  labs(x='Sentiment Score',
+       y='Frequency',
+       title='Use of Strong Words by Topic') +
+  theme_bw() + 
+  theme(legend.position='none',
+        panel.grid.minor=element_blank(),
+        panel.grid.major.x=element_blank(),
+        strip.background=element_rect(fill='grey70'))
+
+# sentiment analysis ------------------------------------------------------
+
+
+# bigrams -----------------------------------------------------------------
+
+bigram.data <- c('BioMedical') %>%
+  map_df(~Website.Parse('Train', .)) %>%
+  unnest_tokens(word, value, token='ngrams', n=2) %>%
+  separate(word, c('word1', 'word2'), sep=' ') %>%
+  anti_join(stop_words, by=c('word1'='word')) %>%
+  anti_join(stop_words, by=c('word2'='word')) %>%
+  anti_join(custom.stopwords, by=c('word1'='word')) %>%
+  anti_join(custom.stopwords, by=c('word2'='word')) %>%
+  filter(!str_detect(word1, '(\\d|\\.|[^A-Za-z])+')) %>%
+  filter(!str_detect(word2, '(\\d|\\.|[^A-Za-z])+')) %>%
+  filter(stringi::stri_enc_mark(word1) == 'ASCII') %>%
+  filter(stringi::stri_enc_mark(word2) == 'ASCII')
+
+afinn.biomedical.frequent.data <- afinn.frequent.data %>%
+  filter(type == 'BioMedical')
+
+bigram.data %>% 
+  count(word1, word2, sort=TRUE) %>%
+  filter(word1 %in% afinn.biomedical.frequent.data$word | word2 %in% afinn.biomedical.frequent.data$word,
+         n >= 2) %>%
+  mutate(word1 = wordStem(word1)) %>%
+  mutate(word2 = wordStem(word2)) %>%
+  graph_from_data_frame() %>%
+  ggraph(layout='fr') +
+  geom_edge_link(aes(edge_alpha=n), show.legend=FALSE, arrow=arrow(type='closed', length=unit(.15, 'inches'))) + 
+  geom_node_point(color='lightblue', size=5) +
+  geom_node_text(aes(label=name), vjust=1, hjust=1) +
+  theme_void() +
+  labs(title='Frequently Used BioMedical Word Pairings')
+
+
+# bigrams -----------------------------------------------------------------
+
+
+
+
+
+# random forest -----------------------------------------------------------
+
 test.numbers <- sample(1:323, 32, replace=FALSE)
 
 ml.data <- data %>%
